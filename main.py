@@ -46,7 +46,7 @@ class StickerPlugin(Star):
         
         yield event.plain_result(f"欢迎使用贴纸生成器！\n{pack_list_msg}\n请输入贴纸包名称:")
         
-    @filter.message()
+    @filter.command()
     async def handle_sticker_session(self, event: AstrMessageEvent):
         """处理贴纸生成会话的各个步骤"""
         user_id = event.get_sender_id()
