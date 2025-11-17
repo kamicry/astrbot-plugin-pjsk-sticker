@@ -22,17 +22,33 @@ class StickerPlugin(Star):
         except Exception as e:
             logger.error(f"加载贴纸数据失败: {e}")
             
+    def _get_session_key(self, event: AstrMessageEvent):
+        """获取会话key，使用(platform, sender_id)元组"""
+        message_obj = getattr(event, "message_obj", None)
+        platform = None
+        if message_obj is not None:
+            platform = getattr(message_obj, "platform", None)
+            if platform is None:
+                inner = getattr(message_obj, "message_obj", None)
+                platform = getattr(inner, "platform", None) if inner is not None else None
+        if platform is None:
+            platform = getattr(event, "platform", None)
+        if platform is None:
+            platform = "default"
+        sender_id = event.get_sender_id()
+        return (platform, sender_id)
+    
     @filter.command("sticker")
     async def start_sticker_session(self, event: AstrMessageEvent):
         """开始贴纸生成会话"""
-        user_id = event.get_sender_id()
+        session_key = self._get_session_key(event)
         
         # 如果用户已有会话，先清除
-        if user_id in self.sessions:
-            del self.sessions[user_id]
+        if session_key in self.sessions:
+            del self.sessions[session_key]
             
         # 初始化新会话
-        self.sessions[user_id] = {
+        self.sessions[session_key] = {
             "step": "select_pack",
             "pack": None,
             "character": None,
@@ -46,38 +62,43 @@ class StickerPlugin(Star):
         
         yield event.plain_result(f"欢迎使用贴纸生成器！\n{pack_list_msg}\n请输入贴纸包名称:")
         
-    @filter.command()
+    @filter.message()
     async def handle_sticker_session(self, event: AstrMessageEvent):
         """处理贴纸生成会话的各个步骤"""
-        user_id = event.get_sender_id()
+        session_key = self._get_session_key(event)
         message = event.message_str.strip()
         
         # 检查用户是否在会话中
-        if user_id not in self.sessions:
+        if session_key not in self.sessions:
             return
             
-        session = self.sessions[user_id]
+        session = self.sessions[session_key]
         current_step = session["step"]
         
         try:
             if current_step == "select_pack":
-                await self._handle_pack_selection(event, user_id, message, session)
+                async for result in self._handle_pack_selection(event, session_key, message, session):
+                    yield result
                 
             elif current_step == "select_character":
-                await self._handle_character_selection(event, user_id, message, session)
+                async for result in self._handle_character_selection(event, session_key, message, session):
+                    yield result
                 
             elif current_step == "select_style":
-                await self._handle_style_selection(event, user_id, message, session)
+                async for result in self._handle_style_selection(event, session_key, message, session):
+                    yield result
                 
             elif current_step == "input_text":
-                await self._handle_text_input(event, user_id, message, session)
+                async for result in self._handle_text_input(event, session_key, message, session):
+                    yield result
                 
         except Exception as e:
             logger.error(f"处理贴纸会话时出错: {e}")
             yield event.plain_result("处理过程中出现错误，请重新开始")
-            del self.sessions[user_id]
+            if session_key in self.sessions:
+                del self.sessions[session_key]
     
-    async def _handle_pack_selection(self, event, user_id, message, session):
+    async def _handle_pack_selection(self, event, session_key, message, session):
         """处理贴纸包选择"""
         packs = self._get_pack_list()
         
@@ -94,7 +115,7 @@ class StickerPlugin(Star):
         
         yield event.plain_result(f"已选择贴纸包: {message}\n{character_list_msg}\n请输入角色名称:")
     
-    async def _handle_character_selection(self, event, user_id, message, session):
+    async def _handle_character_selection(self, event, session_key, message, session):
         """处理角色选择"""
         pack = session["pack"]
         characters = self._get_character_list(pack)
@@ -112,7 +133,7 @@ class StickerPlugin(Star):
         
         yield event.plain_result(f"已选择角色: {message}\n{style_list_msg}")
     
-    async def _handle_style_selection(self, event, user_id, message, session):
+    async def _handle_style_selection(self, event, session_key, message, session):
         """处理动作选择"""
         try:
             style_num = int(message)
@@ -133,7 +154,7 @@ class StickerPlugin(Star):
         except ValueError:
             yield event.plain_result("请输入有效的数字:")
     
-    async def _handle_text_input(self, event, user_id, message, session):
+    async def _handle_text_input(self, event, session_key, message, session):
         """处理文字输入并生成贴纸"""
         session["text"] = message
         
@@ -149,7 +170,8 @@ class StickerPlugin(Star):
         yield event.image_result(url)
         
         # 结束会话
-        del self.sessions[user_id]
+        if session_key in self.sessions:
+            del self.sessions[session_key]
         yield event.plain_result("贴纸生成完成！如需再次生成，请输入 /sticker")
     
     def _get_pack_list(self):
