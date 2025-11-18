@@ -144,7 +144,7 @@ class StickerPlugin(Star):
         except ValueError:
             yield event.plain_result("请输入有效的数字:")
     
-    @filter.message()
+    @filter.regex(r'.*', flags=re.IGNORECASE)
     async def handle_text_input(self, event: AstrMessageEvent):
         """处理文字输入并生成贴纸"""
         session_key = self._get_session_key(event)
