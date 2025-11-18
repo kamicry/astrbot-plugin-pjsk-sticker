@@ -34,10 +34,12 @@ class StickerPlugin(Star):
                 platform = getattr(inner, "platform", None) if inner is not None else None
         if platform is None:
             platform = getattr(event, "platform", None)
-        if platform is None:
-            platform = "default"
+        platform_identifier = "default"
+        if platform is not None:
+            platform_identifier = str(getattr(platform, "name", platform))
         sender_id = event.get_sender_id()
-        return (platform, sender_id)
+        sender_identifier = "unknown" if sender_id is None else str(sender_id)
+        return (platform_identifier, sender_identifier)
     
     def _get_all_characters(self):
         """获取所有可用的角色列表"""
