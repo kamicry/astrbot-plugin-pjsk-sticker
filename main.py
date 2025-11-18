@@ -1,10 +1,13 @@
 from astrbot.api.event import filter, AstrMessageEvent, MessageEventResult
 from astrbot.api.star import Context, Star, register
 from astrbot.api import logger
+from astrbot.api.message import Comp
 import json
 import os
 import re
 import urllib.parse
+import base64
+import httpx
 
 @register("sticker_generator", "YourName", "贴纸生成插件", "1.0.0")
 class StickerPlugin(Star):
@@ -82,16 +85,28 @@ class StickerPlugin(Star):
         yield event.plain_result(f"欢迎使用贴纸生成器！\n{character_list_msg}\n请输入角色名称:")
     
     @filter.regex(r'.*', flags=re.IGNORECASE)
-    async def handle_character_selection(self, event: AstrMessageEvent):
-        """处理角色选择"""
+    async def handle_session_message(self, event: AstrMessageEvent):
+        """统一处理会话中的消息"""
         session_key = self._get_session_key(event)
-        message = event.message_str.strip()
         
-        # 检查用户是否在等待角色选择
-        if session_key not in self.sessions or self.sessions[session_key]["step"] != "select_character":
+        # 如果没有活跃会话，不处理
+        if session_key not in self.sessions:
             return
         
         session = self.sessions[session_key]
+        step = session["step"]
+        message = event.message_str.strip()
+        
+        # 根据当前步骤路由到对应的处理逻辑
+        if step == "select_character":
+            yield self._handle_character_selection(event, session, message)
+        elif step == "select_style":
+            yield self._handle_style_selection(event, session, message)
+        elif step == "input_text":
+            yield self._handle_text_input(event, session, message)
+    
+    async def _handle_character_selection(self, event: AstrMessageEvent, session: dict, message: str):
+        """处理角色选择"""
         all_characters = self._get_all_characters()
         
         # 尝试匹配角色名（不分大小写）
@@ -102,8 +117,7 @@ class StickerPlugin(Star):
                 break
         
         if matched_character is None:
-            yield event.plain_result("角色不存在，请重新输入:")
-            return
+            return event.plain_result("角色不存在，请重新输入:")
         
         session["character"] = matched_character
         session["pack"] = self._get_pack_for_character(matched_character)
@@ -113,20 +127,10 @@ class StickerPlugin(Star):
         styles = self._get_style_list(session["pack"], matched_character)
         style_list_msg = "请选择动作(输入数字):\n" + "\n".join([f"{i+1}. 动作{i+1}" for i in range(len(styles))])
         
-        yield event.plain_result(f"已选择角色: {matched_character}\n{style_list_msg}")
+        return event.plain_result(f"已选择角色: {matched_character}\n{style_list_msg}")
     
-    @filter.regex(r'^\d+$')
-    async def handle_style_selection(self, event: AstrMessageEvent):
+    async def _handle_style_selection(self, event: AstrMessageEvent, session: dict, message: str):
         """处理动作/样式选择"""
-        session_key = self._get_session_key(event)
-        message = event.message_str.strip()
-        
-        # 检查用户是否在等待样式选择
-        if session_key not in self.sessions or self.sessions[session_key]["step"] != "select_style":
-            return
-        
-        session = self.sessions[session_key]
-        
         try:
             style_num = int(message)
             pack = session["pack"]
@@ -134,29 +138,20 @@ class StickerPlugin(Star):
             styles = self._get_style_list(pack, character)
             
             if style_num < 1 or style_num > len(styles):
-                yield event.plain_result(f"请输入1-{len(styles)}之间的数字:")
-                return
+                return event.plain_result(f"请输入1-{len(styles)}之间的数字:")
             
             # 个位数补零
             session["style_id"] = str(style_num).zfill(2)
             session["step"] = "input_text"
             
-            yield event.plain_result("请输入要显示的文字:")
+            return event.plain_result("请输入要显示的文字:")
             
         except ValueError:
-            yield event.plain_result("请输入有效的数字:")
+            return event.plain_result("请输入有效的数字:")
     
-    @filter.regex(r'.*', flags=re.IGNORECASE)
-    async def handle_text_input(self, event: AstrMessageEvent):
+    async def _handle_text_input(self, event: AstrMessageEvent, session: dict, message: str):
         """处理文字输入并生成贴纸"""
         session_key = self._get_session_key(event)
-        message = event.message_str.strip()
-        
-        # 检查用户是否在等待文字输入
-        if session_key not in self.sessions or self.sessions[session_key]["step"] != "input_text":
-            return
-        
-        session = self.sessions[session_key]
         
         try:
             session["text"] = message
@@ -169,19 +164,39 @@ class StickerPlugin(Star):
                 session["text"]
             )
             
-            # 发送图片
-            yield event.image_result(url)
-            
-            # 结束会话
-            if session_key in self.sessions:
-                del self.sessions[session_key]
-            yield event.plain_result("贴纸生成完成！如需再次生成，请输入 /sticker")
+            # 下载图片并转换为base64
+            try:
+                async with httpx.AsyncClient() as client:
+                    response = await client.get(url, timeout=30.0)
+                    if response.status_code == 200:
+                        image_bytes = response.content
+                        image_base64 = base64.b64encode(image_bytes).decode('utf-8')
+                        
+                        # 结束会话
+                        if session_key in self.sessions:
+                            del self.sessions[session_key]
+                        
+                        # 使用 base64:// URI 格式发送图片
+                        return event.chain_result([
+                            Comp.Image(file=f"base64://{image_base64}"),
+                            Comp.Plain(text="贴纸生成完成！如需再次生成，请输入 /sticker")
+                        ])
+                    else:
+                        logger.error(f"下载图片失败，状态码: {response.status_code}")
+                        if session_key in self.sessions:
+                            del self.sessions[session_key]
+                        return event.plain_result(f"图片生成失败，请重试。如需再次生成，请输入 /sticker")
+            except Exception as e:
+                logger.error(f"下载图片时出错: {e}")
+                if session_key in self.sessions:
+                    del self.sessions[session_key]
+                return event.plain_result(f"图片下载失败: {str(e)}\n如需再次生成，请输入 /sticker")
             
         except Exception as e:
             logger.error(f"处理贴纸会话时出错: {e}")
-            yield event.plain_result("处理过程中出现错误，请重新开始")
             if session_key in self.sessions:
                 del self.sessions[session_key]
+            return event.plain_result("处理过程中出现错误，请重新开始")
     
     def _get_style_list(self, pack, character):
         """获取指定角色的动作列表"""
