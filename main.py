@@ -1,7 +1,7 @@
 from astrbot.api.event import filter, AstrMessageEvent, MessageEventResult
 from astrbot.api.star import Context, Star, register
 from astrbot.api import logger
-from astrbot.api import Comp
+import astrbot.api.message_components as Comp
 import json
 import os
 import re
@@ -9,7 +9,7 @@ import urllib.parse
 import base64
 import httpx
 
-@register("sticker_generator", "YourName", "贴纸生成插件", "1.0.0")
+@register("astrbot_plugin_pjsk_sticker", "kamicry", "pjsk表情包生成器", "v1.0.0")
 class StickerPlugin(Star):
     def __init__(self, context: Context):
         super().__init__(context)
