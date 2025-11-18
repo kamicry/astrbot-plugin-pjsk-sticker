@@ -98,12 +98,20 @@ class StickerPlugin(Star):
         message = event.message_str.strip()
         
         # 根据当前步骤路由到对应的处理逻辑
+        handler = None
         if step == "select_character":
-            yield self._handle_character_selection(event, session, message)
+            handler = self._handle_character_selection
         elif step == "select_style":
-            yield self._handle_style_selection(event, session, message)
+            handler = self._handle_style_selection
         elif step == "input_text":
-            yield self._handle_text_input(event, session, message)
+            handler = self._handle_text_input
+        
+        if handler is None:
+            return
+        
+        result = await handler(event, session, message)
+        if result is not None:
+            yield result
     
     async def _handle_character_selection(self, event: AstrMessageEvent, session: dict, message: str):
         """处理角色选择"""
@@ -140,8 +148,8 @@ class StickerPlugin(Star):
             if style_num < 1 or style_num > len(styles):
                 return event.plain_result(f"请输入1-{len(styles)}之间的数字:")
             
-            # 个位数补零
-            session["style_id"] = str(style_num).zfill(2)
+            selected_style = styles[style_num - 1]
+            session["style_id"] = str(selected_style).zfill(2)
             session["step"] = "input_text"
             
             return event.plain_result("请输入要显示的文字:")
