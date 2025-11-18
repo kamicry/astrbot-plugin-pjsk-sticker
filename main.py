@@ -1,7 +1,13 @@
 from astrbot.api.event import filter, AstrMessageEvent, MessageEventResult
 from astrbot.api.star import Context, Star, register
 from astrbot.api import logger
-from astrbot.api import Comp
+try:
+    from astrbot.api.message import Comp
+except ImportError:
+    try:
+        from astrbot.api import Comp
+    except ImportError:
+        from astrbot.api.event import Comp
 import json
 import os
 import re
