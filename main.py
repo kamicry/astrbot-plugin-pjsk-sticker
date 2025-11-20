@@ -231,7 +231,7 @@ class StickerPlugin(Star):
     def _build_sticker_url(self, pack, character, style_id, text):
         """构建贴纸URL"""
         base_url = "https://next-sticker.vercel.app/api/overlay-text"
-        image_path = f"https://raw.githubusercontent.com/kamicry/koishi-plugin-pjsk-pptr/main/src/assets/img/{character}/{character}_{style_id}.png"
+        image_path = f"https://raw.githubusercontent.com/kamicry/meme-stickers-hub/main/{pack}/{character}/{character}_{style_id}.png"
         
         encoded_text = urllib.parse.quote(text)
         
