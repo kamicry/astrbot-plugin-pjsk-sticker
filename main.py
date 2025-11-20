@@ -129,6 +129,9 @@ class StickerPlugin(Star):
     - <样式id>: 0 到 358 之间的数字
     - <文字>: 要显示在贴纸上的文字
 
+    交互式模式退出：
+    - 在任何步骤输入 quit 可直接退出贴纸生成器
+
     例如：/sticker pjsk 42 你好"""
             yield event.plain_result(help_text)
             return
@@ -200,7 +203,7 @@ class StickerPlugin(Star):
         all_packs = self._get_all_packs()
         pack_list_msg = "请选择贴纸包(输入名称):\n" + "\n".join([f"- {pack}" for pack in all_packs])
 
-        yield event.plain_result(f"欢迎使用贴纸生成器！\n{pack_list_msg}")
+        yield event.plain_result(f"欢迎使用贴纸生成器！\n{pack_list_msg}\n\n💡 提示：任何时刻输入 quit 可直接退出")
     
     @filter.regex(r'.*', flags=re.IGNORECASE)
     async def handle_session_message(self, event: AstrMessageEvent):
@@ -214,6 +217,13 @@ class StickerPlugin(Star):
         session = self.sessions[session_key]
         step = session["step"]
         message = event.message_str.strip()
+        
+        # 检查是否输入了quit命令
+        if message.lower() == "quit":
+            if session_key in self.sessions:
+                del self.sessions[session_key]
+            yield event.plain_result("已退出贴纸生成器，如需再次生成请输入 /sticker")
+            return
         
         # 根据当前步骤路由到对应的处理逻辑
         handler = None
