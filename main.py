@@ -101,6 +101,9 @@ class StickerPlugin(Star):
 
         # 获取命令参数
         args = event.message_str.strip().split()
+        # 移除命令本身，只保留参数
+        if len(args) > 0 and args[0].startswith('/sticker'):
+            args = args[1:]
 
         # 处理 /sticker list 命令
         if len(args) > 0 and args[0].lower() == "list":
