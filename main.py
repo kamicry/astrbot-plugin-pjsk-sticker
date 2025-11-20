@@ -15,6 +15,8 @@ class StickerPlugin(Star):
         super().__init__(context)
         self.sessions = {}
         self.list_data = {}
+        self.list_dir = os.path.join(os.path.dirname(__file__), "list")
+        self.image_cache = {}
         
     async def initialize(self):
         """插件初始化，加载list.json数据"""
@@ -53,6 +55,26 @@ class StickerPlugin(Star):
         pack_data = self.list_data.get("packs", {}).get(pack_name, {})
         characters = pack_data.get("characters", {})
         return characters
+    
+    def _load_image_as_base64(self, image_name):
+        """加载图片并转换为base64"""
+        if image_name in self.image_cache:
+            return self.image_cache[image_name]
+        
+        try:
+            image_path = os.path.join(self.list_dir, image_name)
+            if not os.path.exists(image_path):
+                logger.warning(f"图片不存在: {image_path}")
+                return None
+            
+            with open(image_path, 'rb') as f:
+                image_bytes = f.read()
+                image_base64 = base64.b64encode(image_bytes).decode('utf-8')
+                self.image_cache[image_name] = image_base64
+                return image_base64
+        except Exception as e:
+            logger.error(f"加载图片失败 {image_name}: {e}")
+            return None
     
     @filter.command("sticker")
     async def start_sticker_session(self, event: AstrMessageEvent):
@@ -130,8 +152,16 @@ class StickerPlugin(Star):
         # 获取该pack中的角色列表
         characters = self._get_characters_in_pack(matched_pack)
         character_list_msg = "请选择角色(输入数字):\n" + "\n".join([f"{char_id}. {char_data['name']}" for char_id, char_data in characters.items()])
+        response_text = f"已选择贴纸包: {matched_pack}\n{character_list_msg}"
         
-        return event.plain_result(f"已选择贴纸包: {matched_pack}\n{character_list_msg}")
+        character_list_image = self._load_image_as_base64("characterListWithIndex.jpeg")
+        if character_list_image:
+            return event.chain_result([
+                Comp.Plain(text=response_text),
+                Comp.Image(file=f"base64://{character_list_image}")
+            ])
+        
+        return event.plain_result(response_text)
     
     async def _handle_character_selection(self, event: AstrMessageEvent, session: dict, message: str):
         """处理角色选择"""
@@ -143,7 +173,8 @@ class StickerPlugin(Star):
             return event.plain_result("角色不存在，请重新输入角色数字:")
         
         character_data = characters[message]
-        session["character"] = character_data["name"]
+        character_name = character_data["name"]
+        session["character"] = character_name
         session["character_id"] = message
         session["step"] = "select_style"
         
@@ -158,8 +189,16 @@ class StickerPlugin(Star):
         session["id_to_style"] = id_to_style
         
         style_list_msg = "请选择动作(输入数字):\n" + "\n".join([f"{id_val}. 动作{style}" for id_val, style in id_to_style.items()])
+        response_text = f"已选择角色: {character_name}\n{style_list_msg}"
         
-        return event.plain_result(f"已选择角色: {character_data['name']}\n{style_list_msg}")
+        character_image = self._load_image_as_base64(f"{character_name}.jpeg")
+        if character_image:
+            return event.chain_result([
+                Comp.Plain(text=response_text),
+                Comp.Image(file=f"base64://{character_image}")
+            ])
+        
+        return event.plain_result(response_text)
     
     async def _handle_style_selection(self, event: AstrMessageEvent, session: dict, message: str):
         """处理动作/样式选择"""
