@@ -1,3 +1,14 @@
+from astrbot.api.event import filter, AstrMessageEvent, MessageEventResult
+from astrbot.api.star import Context, Star, register
+from astrbot.api import logger
+import astrbot.api.message_components as Comp
+import json
+import os
+import re
+import urllib.parse
+import base64
+import httpx
+
 @register("astrbot_plugin_pjsk_sticker", "kamicry", "pjsk表情包生成器", "v1.0.0")
 class StickerPlugin(Star):
     def __init__(self, context: Context):
@@ -45,24 +56,6 @@ class StickerPlugin(Star):
         characters = pack_data.get("characters", {})
         return characters
     
-    def _find_character_by_style_id(self, pack_name, style_id):
-        """根据样式ID查找对应的角色和样式"""
-        characters = self._get_characters_in_pack(pack_name)
-        
-        for char_id, char_data in characters.items():
-            char_styles = char_data["styles"]
-            char_ids = char_data["id"]
-            
-            # 创建id到style的映射
-            id_to_style = {id_val: style for id_val, style in zip(char_ids, char_styles)}
-            
-            if style_id in id_to_style:
-                character_name = char_data["name"]
-                style = id_to_style[style_id]
-                return (character_name, style)
-        
-        return None
-    
     def _load_image_as_base64(self, image_name):
         """加载图片并转换为base64"""
         if image_name in self.image_cache:
@@ -85,97 +78,14 @@ class StickerPlugin(Star):
     
     @filter.command("sticker")
     async def start_sticker_session(self, event: AstrMessageEvent):
-        """开始贴纸生成会话或处理带参数的命令"""
+        """开始贴纸生成会话"""
         session_key = self._get_session_key(event)
-
-        # 获取命令参数
-        args = event.message_str.strip().split()
-
-        # 处理 /sticker list 命令
-        if len(args) > 0 and args[0].lower() == "list":
-            character_list_image = self._load_image_as_base64("characterListAll.jpeg")
-            if character_list_image:
-                yield event.chain_result([
-                    Comp.Plain(text="所有角色列表："),
-                    Comp.Image(file=f"base64://{character_list_image}")
-                ])
-            else:
-                yield event.plain_result("无法加载角色列表图片")
-            return
-
-        # 处理 /sticker help 命令
-        if len(args) > 0 and args[0].lower() == "help":
-            help_text = """📖 贴纸生成器命令帮助
-
-    命令列表：
-    1. /sticker - 进入交互式模式选择贴纸包、角色、样式并输入文字
-    2. /sticker list - 查看所有角色列表
-    3. /sticker help - 查看此帮助信息
-    4. /sticker <pack> <样式id> <文字> - 直接生成贴纸
-
-    快速生成模式说明：
-    - <pack>: 贴纸包名称（如：pjsk）
-    - <样式id>: 0 到 358 之间的数字
-    - <文字>: 要显示在贴纸上的文字
-
-    例如：/sticker pjsk 42 你好"""
-            yield event.plain_result(help_text)
-            return
-
-        # 处理 /sticker <pack> <样式id> <文字> 直接生成模式
-        if len(args) >= 3:
-            pack_name = args[0].lower()
-            all_packs = self._get_all_packs()
-
-            # 检查pack是否存在
-            pack_found = None
-            for pack in all_packs:
-                if pack.lower() == pack_name:
-                    pack_found = pack
-                    break
-
-            if pack_found:
-                try:
-                    style_id = int(args[1])
-                    text = " ".join(args[2:])
-
-                    # 查找对应的角色和样式
-                    character_info = self._find_character_by_style_id(pack_found, style_id)
-                    if character_info:
-                        character_name, style = character_info
-
-                        # 构建URL并生成贴纸
-                        url = self._build_sticker_url(pack_found, character_name, style, text)
-
-                        try:
-                            async with httpx.AsyncClient() as client:
-                                response = await client.get(url, timeout=30.0)
-                                if response.status_code == 200:
-                                    image_bytes = response.content
-                                    image_base64 = base64.b64encode(image_bytes).decode('utf-8')
-
-                                    yield event.chain_result([
-                                        Comp.Image(file=f"base64://{image_base64}"),
-                                        Comp.Plain(text=f"✨ 贴纸生成完成！\n角色：{character_name} | 样式ID：{style_id}\n文字：{text}")
-                                    ])
-                                else:
-                                    yield event.plain_result(f"❌ 图片生成失败，状态码: {response.status_code}")
-                        except Exception as e:
-                            logger.error(f"下载图片时出错: {e}")
-                            yield event.plain_result(f"❌ 图片下载失败: {str(e)}")
-                    else:
-                        yield event.plain_result(f"❌ 样式ID {style_id} 不存在，请输入 0 到 358 之间的数字")
-                except ValueError:
-                    yield event.plain_result(f"❌ 样式ID 必须是数字，请输入 0 到 358 之间的数字")
-            else:
-                yield event.plain_result(f"❌ 贴纸包 '{pack_name}' 不存在")
-            return
-
+        
         # 如果用户已有会话，先清除
         if session_key in self.sessions:
             del self.sessions[session_key]
-
-        # 初始化新会话（交互式模式）
+        
+        # 初始化新会话
         self.sessions[session_key] = {
             "step": "select_pack",
             "pack": None,
@@ -184,11 +94,11 @@ class StickerPlugin(Star):
             "style_id": None,
             "text": None
         }
-
+        
         # 获取所有可用的pack列表
         all_packs = self._get_all_packs()
         pack_list_msg = "请选择贴纸包(输入名称):\n" + "\n".join([f"- {pack}" for pack in all_packs])
-
+        
         yield event.plain_result(f"欢迎使用贴纸生成器！\n{pack_list_msg}")
     
     @filter.regex(r'.*', flags=re.IGNORECASE)
@@ -278,9 +188,9 @@ class StickerPlugin(Star):
         
         # 保存映射到会话中
         session["id_to_style"] = id_to_style
-
-        # style_list_msg = "请选择动作(输入数字):\n" + "\n".join([f"{id_val}. 动作{style}" for id_val, style in id_to_style.items()])
-        style_list_msg = "请选择动作(输入数字):"
+        
+       # style_list_msg = "请选择动作(输入数字):\n" + "\n".join([f"{id_val}. 动作{style}" for id_val, style in id_to_style.items()])
+        style_list_msg = "请选择动作(输入数字):" 
         response_text = f"已选择角色: {character_name}\n{style_list_msg}"
         
         character_image = self._load_image_as_base64(f"{character_name}.jpeg")
