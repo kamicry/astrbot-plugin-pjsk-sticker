@@ -100,10 +100,17 @@ class StickerPlugin(Star):
         session_key = self._get_session_key(event)
 
         # 获取命令参数
-        args = event.message_str.strip().split()
-        # 移除命令本身，只保留参数
-        if len(args) > 0 and args[0].startswith('/sticker'):
-            args = args[1:]
+        # @filter.command 装饰器会自动去除命令前缀，但message_str可能还包含命令名
+        message_text = event.message_str.strip()
+        
+        # 移除可能存在的命令前缀（/sticker 或 sticker）
+        if message_text.startswith('/sticker'):
+            message_text = message_text[8:].strip()  # 移除 '/sticker'
+        elif message_text.startswith('sticker'):
+            message_text = message_text[7:].strip()  # 移除 'sticker'
+        
+        # 分割参数
+        args = message_text.split() if message_text else []
 
         # 处理 /sticker list 命令
         if len(args) > 0 and args[0].lower() == "list":
@@ -220,6 +227,10 @@ class StickerPlugin(Star):
         session = self.sessions[session_key]
         step = session["step"]
         message = event.message_str.strip()
+        
+        # 跳过命令消息（以/开头的消息），避免重复处理
+        if message.startswith('/'):
+            return
         
         # 检查是否输入了quit命令
         if message.lower() == "quit":
