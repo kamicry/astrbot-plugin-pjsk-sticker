@@ -75,7 +75,7 @@ class StickerPlugin(Star):
         
         # 获取所有可用的pack列表
         all_packs = self._get_all_packs()
-        pack_list_msg = "请选择贴纸包(输入数字):\n" + "\n".join([f"{i+1}. {pack}" for i, pack in enumerate(all_packs)])
+        pack_list_msg = "请选择贴纸包(输入名称):\n" + "\n".join([f"- {pack}" for pack in all_packs])
         
         yield event.plain_result(f"欢迎使用贴纸生成器！\n{pack_list_msg}")
     
@@ -114,23 +114,24 @@ class StickerPlugin(Star):
         """处理pack选择"""
         all_packs = self._get_all_packs()
         
-        try:
-            pack_num = int(message)
-            if pack_num < 1 or pack_num > len(all_packs):
-                return event.plain_result(f"请输入1-{len(all_packs)}之间的数字:")
-            
-            selected_pack = all_packs[pack_num - 1]
-            session["pack"] = selected_pack
-            session["step"] = "select_character"
-            
-            # 获取该pack中的角色列表
-            characters = self._get_characters_in_pack(selected_pack)
-            character_list_msg = "请选择角色(输入数字):\n" + "\n".join([f"{char_id}. {char_data['name']}" for char_id, char_data in characters.items()])
-            
-            return event.plain_result(f"已选择贴纸包: {selected_pack}\n{character_list_msg}")
-            
-        except ValueError:
-            return event.plain_result("请输入有效的数字:")
+        # 尝试匹配pack名（不分大小写）
+        matched_pack = None
+        for pack in all_packs:
+            if message.lower() == pack.lower():
+                matched_pack = pack
+                break
+        
+        if matched_pack is None:
+            return event.plain_result("贴纸包不存在，请重新输入:")
+        
+        session["pack"] = matched_pack
+        session["step"] = "select_character"
+        
+        # 获取该pack中的角色列表
+        characters = self._get_characters_in_pack(matched_pack)
+        character_list_msg = "请选择角色(输入数字):\n" + "\n".join([f"{char_id}. {char_data['name']}" for char_id, char_data in characters.items()])
+        
+        return event.plain_result(f"已选择贴纸包: {matched_pack}\n{character_list_msg}")
     
     async def _handle_character_selection(self, event: AstrMessageEvent, session: dict, message: str):
         """处理角色选择"""
@@ -147,24 +148,30 @@ class StickerPlugin(Star):
         session["step"] = "select_style"
         
         # 获取该角色的动作列表
-        styles = self._get_style_list(pack, message)
-        style_list_msg = "请选择动作(输入数字):\n" + "\n".join([f"{i+1}. 动作{style}" for i, style in enumerate(styles)])
+        styles = character_data["styles"]
+        id_list = character_data["id"]
+        
+        # 创建id到style的映射
+        id_to_style = {id_val: style for id_val, style in zip(id_list, styles)}
+        
+        # 保存映射到会话中
+        session["id_to_style"] = id_to_style
+        
+        style_list_msg = "请选择动作(输入数字):\n" + "\n".join([f"{id_val}. 动作{style}" for id_val, style in id_to_style.items()])
         
         return event.plain_result(f"已选择角色: {character_data['name']}\n{style_list_msg}")
     
     async def _handle_style_selection(self, event: AstrMessageEvent, session: dict, message: str):
         """处理动作/样式选择"""
         try:
-            style_num = int(message)
-            pack = session["pack"]
-            character_id = session["character_id"]
-            styles = self._get_style_list(pack, character_id)
+            selected_id = int(message)
+            id_to_style = session.get("id_to_style", {})
             
-            if style_num < 1 or style_num > len(styles):
-                return event.plain_result(f"请输入1-{len(styles)}之间的数字:")
+            if selected_id not in id_to_style:
+                return event.plain_result(f"请输入有效的动作数字，可选项: {', '.join(map(str, id_to_style.keys()))}")
             
-            selected_style = styles[style_num - 1]
-            session["style_id"] = str(selected_style).zfill(2)
+            selected_style = id_to_style[selected_id]
+            session["style_id"] = selected_style
             session["step"] = "input_text"
             
             return event.plain_result("请输入要显示的文字:")
@@ -220,16 +227,6 @@ class StickerPlugin(Star):
             if session_key in self.sessions:
                 del self.sessions[session_key]
             return event.plain_result("处理过程中出现错误，请重新开始")
-    
-    def _get_style_list(self, pack, character_id):
-        """获取指定角色的动作列表"""
-        try:
-            character_data = self.list_data["packs"][pack]["characters"][character_id]
-            if "styles" in character_data:
-                return character_data["styles"]
-            return list(range(1, 11))
-        except:
-            return list(range(1, 11))
     
     def _build_sticker_url(self, pack, character, style_id, text):
         """构建贴纸URL"""
