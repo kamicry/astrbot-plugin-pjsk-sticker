@@ -151,7 +151,8 @@ class StickerPlugin(Star):
         
         # 获取该pack中的角色列表
         characters = self._get_characters_in_pack(matched_pack)
-        character_list_msg = "请选择角色(输入数字):\n" + "\n".join([f"{char_id}. {char_data['name']}" for char_id, char_data in characters.items()])
+        #character_list_msg = "请选择角色(输入数字):\n" + "\n".join([f"{char_id}. {char_data['name']}" for char_id, char_data in characters.items()])
+        character_list_msg = "请选择角色(输入数字):"
         response_text = f"已选择贴纸包: {matched_pack}\n{character_list_msg}"
         
         character_list_image = self._load_image_as_base64("characterListWithIndex.jpeg")
@@ -188,7 +189,8 @@ class StickerPlugin(Star):
         # 保存映射到会话中
         session["id_to_style"] = id_to_style
         
-        style_list_msg = "请选择动作(输入数字):\n" + "\n".join([f"{id_val}. 动作{style}" for id_val, style in id_to_style.items()])
+       # style_list_msg = "请选择动作(输入数字):\n" + "\n".join([f"{id_val}. 动作{style}" for id_val, style in id_to_style.items()])
+        style_list_msg = "请选择动作(输入数字):" 
         response_text = f"已选择角色: {character_name}\n{style_list_msg}"
         
         character_image = self._load_image_as_base64(f"{character_name}.jpeg")
