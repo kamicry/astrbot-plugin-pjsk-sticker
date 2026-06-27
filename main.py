@@ -228,8 +228,8 @@ class StickerPlugin(Star):
         step = session["step"]
         message = event.message_str.strip()
         
-        # 跳过命令消息（以/开头的消息），避免重复处理
-        if message.startswith('/'):
+        # 跳过命令消息（以/开头的消息）和空消息，避免与 @filter.command 重复处理
+        if not message or message.startswith('/') or message.lower() == 'draw':
             return
         
         # 检查是否输入了quit命令
