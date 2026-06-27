@@ -114,14 +114,15 @@ class StickerPlugin(Star):
 
         # 处理 /draw list 命令
         if len(args) > 0 and args[0].lower() == "list":
-            character_list_image = self._load_image_as_base64("characterListAll.jpeg")
-            if character_list_image:
-                yield event.chain_result([
-                    Comp.Plain(text="所有角色列表："),
-                    Comp.Image(file=f"base64://{character_list_image}")
-                ])
-            else:
-                yield event.plain_result("无法加载角色列表图片")
+            msg_parts = [Comp.Plain(text="PJSK 角色列表：")]
+            pjsk_img = self._load_image_as_base64("characterListAll.jpeg")
+            if pjsk_img:
+                msg_parts.append(Comp.Image(file=f"base64://{pjsk_img}"))
+            msg_parts.append(Comp.Plain(text="Arcaea 角色列表："))
+            arcaea_img = self._load_image_as_base64("arcaea_list.jpg")
+            if arcaea_img:
+                msg_parts.append(Comp.Image(file=f"base64://{arcaea_img}"))
+            yield event.chain_result(msg_parts)
             return
 
         # 处理 /draw help 命令
