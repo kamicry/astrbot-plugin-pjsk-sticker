@@ -140,9 +140,9 @@
         "2": { "name": "Ayu" },
         "3": { "name": "Eto" },
         "4": { "name": "Hikari",
-        "styles": ["1"] },
+        "styles": ["01"] },
         "5": { "name": "Hikari",
-        "styles": ["2"] },
+        "styles": ["01"] },
         "6": { "name": "Ilith" },
         "7": { "name": "Insight" },
         "8": { "name": "Kanae" },
@@ -156,9 +156,9 @@
         "16": { "name": "Saya" },
         "17": { "name": "Shirabe" },
         "18": { "name": "Shirahime" },
-        "19": { "name": "Tairitsu","styles": ["1"] },
-        "20": { "name": "Tairitsu","styles": ["2"] },
-        "21": { "name": "Tairitsu","styles": ["3"] },
+        "19": { "name": "Tairitsu","styles": ["01"] },
+        "20": { "name": "Tairitsu","styles": ["02"] },
+        "21": { "name": "Tairitsu","styles": ["03"] },
         "22": { "name": "Vita" }
       }
     }

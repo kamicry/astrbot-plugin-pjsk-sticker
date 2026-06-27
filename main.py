@@ -94,7 +94,7 @@ class StickerPlugin(Star):
             logger.error(f"加载图片失败 {image_name}: {e}")
             return None
     
-    @filter.command("sticker")
+    @filter.command("draw")
     async def start_sticker_session(self, event: AstrMessageEvent):
         """开始贴纸生成会话或处理带参数的命令"""
         session_key = self._get_session_key(event)
@@ -103,16 +103,16 @@ class StickerPlugin(Star):
         # @filter.command 装饰器会自动去除命令前缀，但message_str可能还包含命令名
         message_text = event.message_str.strip()
         
-        # 移除可能存在的命令前缀（/sticker 或 sticker）
-        if message_text.startswith('/sticker'):
-            message_text = message_text[8:].strip()  # 移除 '/sticker'
-        elif message_text.startswith('sticker'):
-            message_text = message_text[7:].strip()  # 移除 'sticker'
+        # 移除可能存在的命令前缀（/draw 或 draw）
+        if message_text.startswith('/draw'):
+            message_text = message_text[5:].strip()  # 移除 '/draw'
+        elif message_text.startswith('draw'):
+            message_text = message_text[4:].strip()  # 移除 'draw'
         
         # 分割参数
         args = message_text.split() if message_text else []
 
-        # 处理 /sticker list 命令
+        # 处理 /draw list 命令
         if len(args) > 0 and args[0].lower() == "list":
             character_list_image = self._load_image_as_base64("characterListAll.jpeg")
             if character_list_image:
@@ -124,15 +124,15 @@ class StickerPlugin(Star):
                 yield event.plain_result("无法加载角色列表图片")
             return
 
-        # 处理 /sticker help 命令
+        # 处理 /draw help 命令
         if len(args) > 0 and args[0].lower() == "help":
             help_text = """📖 贴纸生成器命令帮助
 
     命令列表：
-    1. /sticker - 进入交互式模式选择贴纸包、角色、样式并输入文字
-    2. /sticker list - 查看所有角色列表
-    3. /sticker help - 查看此帮助信息
-    4. /sticker <pack> <样式id> <文字> - 直接生成贴纸
+    1. /draw - 进入交互式模式选择贴纸包、角色、样式并输入文字
+    2. /draw list - 查看所有角色列表
+    3. /draw help - 查看此帮助信息
+    4. /draw <pack> <样式id> <文字> - 直接生成贴纸
 
     快速生成模式说明：
     - <pack>: 贴纸包名称（如：pjsk）
@@ -142,11 +142,11 @@ class StickerPlugin(Star):
     交互式模式退出：
     - 在任何步骤输入 quit 可直接退出贴纸生成器
 
-    例如：/sticker pjsk 42 你好"""
+    例如：/draw pjsk 42 你好"""
             yield event.plain_result(help_text)
             return
 
-        # 处理 /sticker <pack> <样式id> <文字> 直接生成模式
+        # 处理 /draw <pack> <样式id> <文字> 直接生成模式
         if len(args) >= 3:
             pack_name = args[0].lower()
             all_packs = self._get_all_packs()
@@ -236,7 +236,7 @@ class StickerPlugin(Star):
         if message.lower() == "quit":
             if session_key in self.sessions:
                 del self.sessions[session_key]
-            yield event.plain_result("已退出贴纸生成器，如需再次生成请输入 /sticker")
+            yield event.plain_result("已退出贴纸生成器，如需再次生成请输入 /draw")
             return
         
         # 根据当前步骤路由到对应的处理逻辑
@@ -270,62 +270,77 @@ class StickerPlugin(Star):
         
         if matched_pack is None:
             return event.plain_result("贴纸包不存在，请重新输入:")
-        
+
         session["pack"] = matched_pack
         session["step"] = "select_character"
-        
-        # 获取该pack中的角色列表
-        characters = self._get_characters_in_pack(matched_pack)
-        #character_list_msg = "请选择角色(输入数字):\n" + "\n".join([f"{char_id}. {char_data['name']}" for char_id, char_data in characters.items()])
+
         character_list_msg = "请选择角色(输入数字):"
         response_text = f"已选择贴纸包: {matched_pack}\n{character_list_msg}"
-        
-        character_list_image = self._load_image_as_base64("characterListWithIndex.jpeg")
-        if character_list_image:
-            return event.chain_result([
-                Comp.Plain(text=response_text),
-                Comp.Image(file=f"base64://{character_list_image}")
-            ])
-        
+
+        if matched_pack == "arcaea":
+            # arcaea 使用专用角色列表图
+            arcaea_image = self._load_image_as_base64("arcaea_list.jpg")
+            if arcaea_image:
+                return event.chain_result([
+                    Comp.Plain(text=response_text),
+                    Comp.Image(file=f"base64://{arcaea_image}")
+                ])
+        else:
+            # pjsk 使用通用角色列表图
+            character_list_image = self._load_image_as_base64("characterListWithIndex.jpeg")
+            if character_list_image:
+                return event.chain_result([
+                    Comp.Plain(text=response_text),
+                    Comp.Image(file=f"base64://{character_list_image}")
+                ])
+
         return event.plain_result(response_text)
     
     async def _handle_character_selection(self, event: AstrMessageEvent, session: dict, message: str):
         """处理角色选择"""
         pack = session["pack"]
         characters = self._get_characters_in_pack(pack)
-        
+
         # 检查输入是否是有效的角色ID
         if message not in characters:
             return event.plain_result("角色不存在，请重新输入角色数字:")
-        
+
         character_data = characters[message]
         character_name = character_data["name"]
         session["character"] = character_name
         session["character_id"] = message
-        session["step"] = "select_style"
-        
-        # 获取该角色的动作列表
-        styles = character_data["styles"]
-        id_list = character_data["id"]
-        
-        # 创建id到style的映射
-        id_to_style = {id_val: style for id_val, style in zip(id_list, styles)}
-        
-        # 保存映射到会话中
-        session["id_to_style"] = id_to_style
 
-        # style_list_msg = "请选择动作(输入数字):\n" + "\n".join([f"{id_val}. 动作{style}" for id_val, style in id_to_style.items()])
-        style_list_msg = "请选择动作(输入数字):"
-        response_text = f"已选择角色: {character_name}\n{style_list_msg}"
-        
-        character_image = self._load_image_as_base64(f"{character_name}.jpeg")
-        if character_image:
-            return event.chain_result([
-                Comp.Plain(text=response_text),
-                Comp.Image(file=f"base64://{character_image}")
-            ])
-        
-        return event.plain_result(response_text)
+        if pack == "arcaea":
+            # arcaea: 跳过 style 选择，直接用第一个 style（如有）
+            styles = character_data.get("styles", [])
+            session["style_id"] = styles[0] if styles else None
+            session["step"] = "input_text"
+            return event.plain_result(f"已选择角色: {character_name}\n请输入要显示的文字:")
+        else:
+            # pjsk: 进入 style 选择
+            session["step"] = "select_style"
+
+            # 获取该角色的动作列表
+            styles = character_data["styles"]
+            id_list = character_data["id"]
+
+            # 创建id到style的映射
+            id_to_style = {id_val: style for id_val, style in zip(id_list, styles)}
+
+            # 保存映射到会话中
+            session["id_to_style"] = id_to_style
+
+            style_list_msg = "请选择动作(输入数字):"
+            response_text = f"已选择角色: {character_name}\n{style_list_msg}"
+
+            character_image = self._load_image_as_base64(f"{character_name}.jpeg")
+            if character_image:
+                return event.chain_result([
+                    Comp.Plain(text=response_text),
+                    Comp.Image(file=f"base64://{character_image}")
+                ])
+
+            return event.plain_result(response_text)
     
     async def _handle_style_selection(self, event: AstrMessageEvent, session: dict, message: str):
         """处理动作/样式选择"""
@@ -375,18 +390,18 @@ class StickerPlugin(Star):
                         # 使用 base64:// URI 格式发送图片
                         return event.chain_result([
                             Comp.Image(file=f"base64://{image_base64}"),
-                            Comp.Plain(text="贴纸生成完成！如需再次生成，请输入 /sticker")
+                            Comp.Plain(text="贴纸生成完成！如需再次生成，请输入 /draw")
                         ])
                     else:
                         logger.error(f"下载图片失败，状态码: {response.status_code}")
                         if session_key in self.sessions:
                             del self.sessions[session_key]
-                        return event.plain_result(f"图片生成失败，请重试。如需再次生成，请输入 /sticker")
+                        return event.plain_result(f"图片生成失败，请重试。如需再次生成，请输入 /draw")
             except Exception as e:
                 logger.error(f"下载图片时出错: {e}")
                 if session_key in self.sessions:
                     del self.sessions[session_key]
-                return event.plain_result(f"图片下载失败: {str(e)}\n如需再次生成，请输入 /sticker")
+                return event.plain_result(f"图片下载失败: {str(e)}\n如需再次生成，请输入 /draw")
             
         except Exception as e:
             logger.error(f"处理贴纸会话时出错: {e}")
@@ -397,11 +412,19 @@ class StickerPlugin(Star):
     def _build_sticker_url(self, pack, character, style_id, text):
         """构建贴纸URL"""
         base_url = "https://next-sticker.vercel.app/api/overlay-text"
-        image_path = f"https://raw.githubusercontent.com/kamicry/meme-stickers-hub/main/{pack}/{character}/{character}_{style_id}.png"
-        
+
+        if pack == "arcaea":
+            # arcaea: style 有值则追加后缀（如 hikari1.png, tairitsu2.png）
+            char_lower = character.lower()
+            filename = f"{char_lower}{style_id}.png" if style_id else f"{char_lower}.png"
+            image_path = f"https://raw.githubusercontent.com/kamicry/arcpjsk-hub/main/arcaea/{character}/{filename}"
+        else:
+            # pjsk: 保留 style_id
+            image_path = f"https://raw.githubusercontent.com/kamicry/arcpjsk-hub/main/pjsk/{character}/{character}_{style_id}.png"
+
         encoded_text = urllib.parse.quote(text)
-        
-        return f"{base_url}?path={image_path}&key={encoded_text}"
+
+        return f"{base_url}?type={pack}&path={image_path}&key={encoded_text}"
     
     async def terminate(self):
         """插件销毁时清理资源"""
