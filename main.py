@@ -132,12 +132,11 @@ class StickerPlugin(Star):
     1. /draw - 进入交互式模式选择贴纸包、角色、样式并输入文字
     2. /draw list - 查看所有角色列表
     3. /draw help - 查看此帮助信息
-    4. /draw <pack> <样式id> <文字> - 直接生成贴纸
+    4. /draw <pack> <样式id/序号> <文字> - 直接生成贴纸
 
     快速生成模式说明：
-    - <pack>: 贴纸包名称（如：pjsk）
-    - <样式id>: 0 到 358 之间的数字
-    - <文字>: 要显示在贴纸上的文字
+    - pjsk: /draw pjsk <样式id> <文字>（样式id: 0~358）
+    - arcaea: /draw arcaea <角色序号> <文字>（序号见 arcaea_list.jpg）
 
     交互式模式退出：
     - 在任何步骤输入 quit 可直接退出贴纸生成器
@@ -160,37 +159,48 @@ class StickerPlugin(Star):
 
             if pack_found:
                 try:
-                    style_id = int(args[1])
                     text = " ".join(args[2:])
 
-                    # 查找对应的角色和样式
-                    character_info = self._find_character_by_style_id(pack_found, style_id)
-                    if character_info:
+                    if pack_found == "arcaea":
+                        # arcaea 直接生成：/draw arcaea <角色序号> <文字>
+                        characters = self._get_characters_in_pack("arcaea")
+                        char_index = str(int(args[1]))  # 规范化索引
+                        if char_index not in characters:
+                            yield event.plain_result(f"❌ 角色序号 {args[1]} 不存在")
+                            return
+                        character_data = characters[char_index]
+                        character_name = character_data["name"]
+                        styles = character_data.get("styles", [])
+                        style = styles[0] if styles else None
+                        url = self._build_sticker_url(pack_found, character_name, style, text)
+                    else:
+                        # pjsk 直接生成：/draw pjsk <样式id> <文字>
+                        style_id = int(args[1])
+                        character_info = self._find_character_by_style_id(pack_found, style_id)
+                        if not character_info:
+                            yield event.plain_result(f"❌ 样式ID {style_id} 不存在，请输入 0 到 358 之间的数字")
+                            return
                         character_name, style = character_info
-
-                        # 构建URL并生成贴纸
                         url = self._build_sticker_url(pack_found, character_name, style, text)
 
-                        try:
-                            async with httpx.AsyncClient() as client:
-                                response = await client.get(url, timeout=30.0)
-                                if response.status_code == 200:
-                                    image_bytes = response.content
-                                    image_base64 = base64.b64encode(image_bytes).decode('utf-8')
+                    try:
+                        async with httpx.AsyncClient() as client:
+                            response = await client.get(url, timeout=30.0)
+                            if response.status_code == 200:
+                                image_bytes = response.content
+                                image_base64 = base64.b64encode(image_bytes).decode('utf-8')
 
-                                    yield event.chain_result([
-                                        Comp.Image(file=f"base64://{image_base64}"),
-                                        Comp.Plain(text=f"✨ 贴纸生成完成！\n角色：{character_name} | 样式ID：{style_id}\n文字：{text}")
-                                    ])
-                                else:
-                                    yield event.plain_result(f"❌ 图片生成失败，状态码: {response.status_code}")
-                        except Exception as e:
-                            logger.error(f"下载图片时出错: {e}")
-                            yield event.plain_result(f"❌ 图片下载失败: {str(e)}")
-                    else:
-                        yield event.plain_result(f"❌ 样式ID {style_id} 不存在，请输入 0 到 358 之间的数字")
+                                yield event.chain_result([
+                                    Comp.Image(file=f"base64://{image_base64}"),
+                                    Comp.Plain(text=f"✨ 贴纸生成完成！\n角色：{character_name}\n文字：{text}")
+                                ])
+                            else:
+                                yield event.plain_result(f"❌ 图片生成失败，状态码: {response.status_code}")
+                    except Exception as e:
+                        logger.error(f"下载图片时出错: {e}")
+                        yield event.plain_result(f"❌ 图片下载失败: {str(e)}")
                 except ValueError:
-                    yield event.plain_result(f"❌ 样式ID 必须是数字，请输入 0 到 358 之间的数字")
+                    yield event.plain_result(f"❌ 参数错误，请检查序号是否为数字")
             else:
                 yield event.plain_result(f"❌ 贴纸包 '{pack_name}' 不存在")
             return
