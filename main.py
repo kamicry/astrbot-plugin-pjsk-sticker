@@ -1,6 +1,6 @@
 from astrbot.api.event import filter, AstrMessageEvent, MessageEventResult
 from astrbot.api.star import Context, Star, register
-from astrbot.api import logger
+from astrbot.api import logger, AstrBotConfig
 import astrbot.api.message_components as Comp
 import json
 import os
@@ -9,14 +9,20 @@ import urllib.parse
 import base64
 import httpx
 
-@register("astrbot_plugin_pjsk_sticker", "kamicry", "pjsk表情包生成器", "v1.2.0")
+@register("astrbot_plugin_pjsk_sticker", "kamicry", "pjsk表情包生成器", "v1.2.1")
 class StickerPlugin(Star):
-    def __init__(self, context: Context):
+    def __init__(self, context: Context, config: AstrBotConfig = None):
         super().__init__(context)
+        self.config = config or {}
         self.sessions = {}
         self.list_data = {}
         self.list_dir = os.path.join(os.path.dirname(__file__), "list")
         self.image_cache = {}
+
+        # 从配置读取 API URL，默认不提供
+        self.api_url = self.config.get("api_url", "") if isinstance(self.config, dict) else ""
+        if not self.api_url:
+            logger.warning("pjsk表情包生成器插件未配置 API URL！请在后台配置。")
         
     async def initialize(self):
         """插件初始化，加载list.json数据"""
@@ -97,6 +103,11 @@ class StickerPlugin(Star):
     @filter.command("draw")
     async def start_sticker_session(self, event: AstrMessageEvent):
         """开始贴纸生成会话或处理带参数的命令"""
+        # 检查 API URL 是否已配置
+        if not self.api_url:
+            yield event.plain_result("❌ 插件未配置 API URL，请联系管理员在后台配置。")
+            return
+
         session_key = self._get_session_key(event)
 
         # 获取命令参数
@@ -236,6 +247,12 @@ class StickerPlugin(Star):
         
         # 如果没有活跃会话，不处理
         if session_key not in self.sessions:
+            return
+
+        # 检查 API URL 是否已配置
+        if not self.api_url:
+            yield event.plain_result("❌ 插件未配置 API URL，请联系管理员在后台配置。")
+            del self.sessions[session_key]
             return
         
         session = self.sessions[session_key]
@@ -425,7 +442,9 @@ class StickerPlugin(Star):
     
     def _build_sticker_url(self, pack, character, style_id, text):
         """构建贴纸URL"""
-        base_url = "https://next-sticker.vercel.app/api/overlay-text"
+        if not self.api_url:
+            raise ValueError("API URL 未配置")
+        base_url = self.api_url
 
         if pack == "arcaea":
             # arcaea: style 有值则追加后缀（如 hikari1.png, tairitsu2.png）
