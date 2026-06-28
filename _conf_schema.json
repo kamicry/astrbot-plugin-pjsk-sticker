@@ -3,6 +3,6 @@
     "description": "pjsk表情包生成器 API 的 Vercel 部署 URL",
     "type": "string",
     "default": "",
-    "hint": "例如：https://your-project.vercel.app/api/overlay-text。默认不提供，请在后台配置。"
+    "hint": "例如：https://your-project.vercel.app/api/overlay-text 默认不提供，请查看项目仓库进行后端api布置。"
   }
 }
